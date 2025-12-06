@@ -1,270 +1,807 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { storage } from "./storage";
-import { insertVehicleSchema, insertGeofenceSchema, insertAlertSchema } from "@shared/schema";
+import { supabase } from "./lib/supabase";
+import type { Vehicle, Alert, Geofence, Trip, LocationPoint, RouteEvent, VehicleStats, SpeedViolation } from "@shared/schema";
 
-const clients = new Set<WebSocket>();
+// ============================================
+// Funções auxiliares para transformar dados do banco
+// ============================================
 
-function broadcastVehicles(vehicles: unknown[]) {
-  const message = JSON.stringify({ type: "vehicles", data: vehicles });
-  
-  clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
+function transformVehicle(row: any): Vehicle {
+  return {
+    id: row.id,
+    name: row.name,
+    licensePlate: row.license_plate,
+    model: row.model,
+    status: row.status,
+    ignition: row.ignition,
+    currentSpeed: row.current_speed,
+    speedLimit: row.speed_limit,
+    heading: row.heading,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    accuracy: row.accuracy,
+    batteryLevel: row.battery_level,
+    lastUpdate: row.last_update,
+  };
 }
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+function transformAlert(row: any): Alert {
+  return {
+    id: row.id,
+    type: row.type,
+    priority: row.priority,
+    vehicleId: row.vehicle_id,
+    vehicleName: row.vehicle_name,
+    message: row.message,
+    read: row.read,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    speed: row.speed,
+    speedLimit: row.speed_limit,
+    geofenceName: row.geofence_name,
+    timestamp: row.timestamp,
+  };
+}
 
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+function transformGeofence(row: any): Geofence {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    type: row.type,
+    active: row.active,
+    center: row.center,
+    radius: row.radius,
+    points: row.points,
+    rules: row.rules || [],
+    vehicleIds: row.vehicle_ids || [],
+    color: row.color,
+    lastTriggered: row.last_triggered,
+  };
+}
 
-  storage.onVehicleUpdate(broadcastVehicles);
+function transformLocationPoint(row: any): LocationPoint {
+  return {
+    latitude: row.latitude,
+    longitude: row.longitude,
+    speed: row.speed,
+    heading: row.heading,
+    timestamp: row.timestamp,
+    accuracy: row.accuracy,
+  };
+}
 
-  wss.on("connection", (ws) => {
+function transformRouteEvent(row: any): RouteEvent {
+  return {
+    id: row.id,
+    type: row.type,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    timestamp: row.timestamp,
+    duration: row.duration,
+    speed: row.speed,
+    speedLimit: row.speed_limit,
+    geofenceName: row.geofence_name,
+    address: row.address,
+  };
+}
+
+function transformSpeedViolation(row: any): SpeedViolation {
+  return {
+    id: row.id,
+    vehicleId: row.vehicle_id,
+    vehicleName: row.vehicle_name,
+    speed: row.speed,
+    speedLimit: row.speed_limit,
+    excessSpeed: row.excess_speed,
+    timestamp: row.timestamp,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    duration: row.duration,
+  };
+}
+
+export async function registerRoutes(server: Server, app: Express) {
+  // ============================================
+  // Vehicles API
+  // ============================================
+  
+  // GET /api/vehicles - Listar todos os veículos
+  app.get("/api/vehicles", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("*")
+        .order("name");
+      
+      if (error) throw error;
+      
+      const vehicles = (data || []).map(transformVehicle);
+      res.json(vehicles);
+    } catch (error) {
+      console.error("Erro ao buscar veículos:", error);
+      res.status(500).json({ message: "Erro ao buscar veículos" });
+    }
+  });
+
+  // GET /api/vehicles/:id - Buscar veículo por ID
+  app.get("/api/vehicles/:id", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("*")
+        .eq("id", req.params.id)
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Veículo não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json(transformVehicle(data));
+    } catch (error) {
+      console.error("Erro ao buscar veículo:", error);
+      res.status(500).json({ message: "Erro ao buscar veículo" });
+    }
+  });
+
+  // POST /api/vehicles - Criar novo veículo
+  app.post("/api/vehicles", async (req, res) => {
+    try {
+      const { name, licensePlate, model, latitude, longitude, speedLimit } = req.body;
+      
+      const { data, error } = await supabase
+        .from("vehicles")
+        .insert({
+          name,
+          license_plate: licensePlate,
+          model,
+          latitude,
+          longitude,
+          speed_limit: speedLimit || 60,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      res.status(201).json(transformVehicle(data));
+    } catch (error) {
+      console.error("Erro ao criar veículo:", error);
+      res.status(500).json({ message: "Erro ao criar veículo" });
+    }
+  });
+
+  // PATCH /api/vehicles/:id - Atualizar veículo
+  app.patch("/api/vehicles/:id", async (req, res) => {
+    try {
+      const updates: Record<string, any> = {};
+      
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.licensePlate !== undefined) updates.license_plate = req.body.licensePlate;
+      if (req.body.model !== undefined) updates.model = req.body.model;
+      if (req.body.status !== undefined) updates.status = req.body.status;
+      if (req.body.ignition !== undefined) updates.ignition = req.body.ignition;
+      if (req.body.currentSpeed !== undefined) updates.current_speed = req.body.currentSpeed;
+      if (req.body.speedLimit !== undefined) updates.speed_limit = req.body.speedLimit;
+      if (req.body.heading !== undefined) updates.heading = req.body.heading;
+      if (req.body.latitude !== undefined) updates.latitude = req.body.latitude;
+      if (req.body.longitude !== undefined) updates.longitude = req.body.longitude;
+      if (req.body.accuracy !== undefined) updates.accuracy = req.body.accuracy;
+      if (req.body.batteryLevel !== undefined) updates.battery_level = req.body.batteryLevel;
+      
+      updates.last_update = new Date().toISOString();
+      updates.updated_at = new Date().toISOString();
+      
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update(updates)
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Veículo não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json(transformVehicle(data));
+    } catch (error) {
+      console.error("Erro ao atualizar veículo:", error);
+      res.status(500).json({ message: "Erro ao atualizar veículo" });
+    }
+  });
+
+  // DELETE /api/vehicles/:id - Deletar veículo
+  app.delete("/api/vehicles/:id", async (req, res) => {
+    try {
+      const { error } = await supabase
+        .from("vehicles")
+        .delete()
+        .eq("id", req.params.id);
+      
+      if (error) throw error;
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao deletar veículo:", error);
+      res.status(500).json({ message: "Erro ao deletar veículo" });
+    }
+  });
+
+  // ============================================
+  // Alerts API
+  // ============================================
+  
+  // GET /api/alerts - Listar todos os alertas
+  app.get("/api/alerts", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("alerts")
+        .select("*")
+        .order("timestamp", { ascending: false });
+      
+      if (error) throw error;
+      
+      const alerts = (data || []).map(transformAlert);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Erro ao buscar alertas:", error);
+      res.status(500).json({ message: "Erro ao buscar alertas" });
+    }
+  });
+
+  // POST /api/alerts - Criar novo alerta
+  app.post("/api/alerts", async (req, res) => {
+    try {
+      const { type, priority, vehicleId, vehicleName, message, latitude, longitude, speed, speedLimit, geofenceName } = req.body;
+      
+      const { data, error } = await supabase
+        .from("alerts")
+        .insert({
+          type,
+          priority,
+          vehicle_id: vehicleId,
+          vehicle_name: vehicleName,
+          message,
+          latitude,
+          longitude,
+          speed,
+          speed_limit: speedLimit,
+          geofence_name: geofenceName,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      res.status(201).json(transformAlert(data));
+    } catch (error) {
+      console.error("Erro ao criar alerta:", error);
+      res.status(500).json({ message: "Erro ao criar alerta" });
+    }
+  });
+
+  // PATCH /api/alerts/:id/read - Marcar alerta como lido
+  app.patch("/api/alerts/:id/read", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("alerts")
+        .update({ read: true })
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Alerta não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json(transformAlert(data));
+    } catch (error) {
+      console.error("Erro ao marcar alerta como lido:", error);
+      res.status(500).json({ message: "Erro ao atualizar alerta" });
+    }
+  });
+
+  // PATCH /api/alerts/read-all - Marcar todos os alertas como lidos
+  app.patch("/api/alerts/read-all", async (_req, res) => {
+    try {
+      const { error } = await supabase
+        .from("alerts")
+        .update({ read: true })
+        .eq("read", false);
+      
+      if (error) throw error;
+      
+      res.json({ message: "Todos os alertas foram marcados como lidos" });
+    } catch (error) {
+      console.error("Erro ao marcar alertas como lidos:", error);
+      res.status(500).json({ message: "Erro ao atualizar alertas" });
+    }
+  });
+
+  // DELETE /api/alerts/:id - Deletar alerta
+  app.delete("/api/alerts/:id", async (req, res) => {
+    try {
+      const { error } = await supabase
+        .from("alerts")
+        .delete()
+        .eq("id", req.params.id);
+      
+      if (error) throw error;
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao deletar alerta:", error);
+      res.status(500).json({ message: "Erro ao deletar alerta" });
+    }
+  });
+
+  // ============================================
+  // Geofences API
+  // ============================================
+  
+  // GET /api/geofences - Listar todas as geofences
+  app.get("/api/geofences", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("geofences")
+        .select("*")
+        .order("name");
+      
+      if (error) throw error;
+      
+      const geofences = (data || []).map(transformGeofence);
+      res.json(geofences);
+    } catch (error) {
+      console.error("Erro ao buscar geofences:", error);
+      res.status(500).json({ message: "Erro ao buscar geofences" });
+    }
+  });
+
+  // GET /api/geofences/:id - Buscar geofence por ID
+  app.get("/api/geofences/:id", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("geofences")
+        .select("*")
+        .eq("id", req.params.id)
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Geofence não encontrada" });
+        }
+        throw error;
+      }
+      
+      res.json(transformGeofence(data));
+    } catch (error) {
+      console.error("Erro ao buscar geofence:", error);
+      res.status(500).json({ message: "Erro ao buscar geofence" });
+    }
+  });
+
+  // POST /api/geofences - Criar nova geofence
+  app.post("/api/geofences", async (req, res) => {
+    try {
+      const { name, description, type, active, center, radius, points, rules, vehicleIds, color } = req.body;
+      
+      const { data, error } = await supabase
+        .from("geofences")
+        .insert({
+          name,
+          description,
+          type,
+          active: active ?? true,
+          center,
+          radius,
+          points,
+          rules: rules || [],
+          vehicle_ids: vehicleIds || [],
+          color,
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      res.status(201).json(transformGeofence(data));
+    } catch (error) {
+      console.error("Erro ao criar geofence:", error);
+      res.status(500).json({ message: "Erro ao criar geofence" });
+    }
+  });
+
+  // PATCH /api/geofences/:id - Atualizar geofence
+  app.patch("/api/geofences/:id", async (req, res) => {
+    try {
+      const updates: Record<string, any> = {};
+      
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.description !== undefined) updates.description = req.body.description;
+      if (req.body.type !== undefined) updates.type = req.body.type;
+      if (req.body.active !== undefined) updates.active = req.body.active;
+      if (req.body.center !== undefined) updates.center = req.body.center;
+      if (req.body.radius !== undefined) updates.radius = req.body.radius;
+      if (req.body.points !== undefined) updates.points = req.body.points;
+      if (req.body.rules !== undefined) updates.rules = req.body.rules;
+      if (req.body.vehicleIds !== undefined) updates.vehicle_ids = req.body.vehicleIds;
+      if (req.body.color !== undefined) updates.color = req.body.color;
+      
+      updates.updated_at = new Date().toISOString();
+      
+      const { data, error } = await supabase
+        .from("geofences")
+        .update(updates)
+        .eq("id", req.params.id)
+        .select()
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Geofence não encontrada" });
+        }
+        throw error;
+      }
+      
+      res.json(transformGeofence(data));
+    } catch (error) {
+      console.error("Erro ao atualizar geofence:", error);
+      res.status(500).json({ message: "Erro ao atualizar geofence" });
+    }
+  });
+
+  // DELETE /api/geofences/:id - Deletar geofence
+  app.delete("/api/geofences/:id", async (req, res) => {
+    try {
+      const { error } = await supabase
+        .from("geofences")
+        .delete()
+        .eq("id", req.params.id);
+      
+      if (error) throw error;
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao deletar geofence:", error);
+      res.status(500).json({ message: "Erro ao deletar geofence" });
+    }
+  });
+
+  // ============================================
+  // Trips/History API
+  // ============================================
+  
+  // GET /api/vehicles/:id/trips - Listar viagens de um veículo
+  app.get("/api/vehicles/:id/trips", async (req, res) => {
+    try {
+      const vehicleId = req.params.id;
+      const { from, to } = req.query;
+      
+      let query = supabase
+        .from("trips")
+        .select("*")
+        .eq("vehicle_id", vehicleId)
+        .order("start_time", { ascending: false });
+      
+      if (from) {
+        query = query.gte("start_time", from as string);
+      }
+      if (to) {
+        query = query.lte("end_time", to as string);
+      }
+      
+      const { data: tripsData, error: tripsError } = await query;
+      
+      if (tripsError) throw tripsError;
+      
+      // Para cada viagem, buscar os pontos e eventos
+      const trips: Trip[] = await Promise.all(
+        (tripsData || []).map(async (tripRow) => {
+          // Buscar pontos de localização
+          const { data: pointsData } = await supabase
+            .from("location_points")
+            .select("*")
+            .eq("trip_id", tripRow.id)
+            .order("timestamp");
+          
+          // Buscar eventos
+          const { data: eventsData } = await supabase
+            .from("route_events")
+            .select("*")
+            .eq("trip_id", tripRow.id)
+            .order("timestamp");
+          
+          return {
+            id: tripRow.id,
+            vehicleId: tripRow.vehicle_id,
+            startTime: tripRow.start_time,
+            endTime: tripRow.end_time,
+            totalDistance: tripRow.total_distance,
+            travelTime: tripRow.travel_time,
+            stoppedTime: tripRow.stopped_time,
+            averageSpeed: tripRow.average_speed,
+            maxSpeed: tripRow.max_speed,
+            stopsCount: tripRow.stops_count,
+            points: (pointsData || []).map(transformLocationPoint),
+            events: (eventsData || []).map(transformRouteEvent),
+          };
+        })
+      );
+      
+      res.json(trips);
+    } catch (error) {
+      console.error("Erro ao buscar viagens:", error);
+      res.status(500).json({ message: "Erro ao buscar viagens" });
+    }
+  });
+
+  // ============================================
+  // Reports API
+  // ============================================
+  
+  // GET /api/reports/speed-stats - Estatísticas de velocidade
+  app.get("/api/reports/speed-stats", async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      
+      let query = supabase
+        .from("speed_violations")
+        .select("*");
+      
+      if (from) {
+        query = query.gte("timestamp", from as string);
+      }
+      if (to) {
+        query = query.lte("timestamp", to as string);
+      }
+      
+      const { data: violations, error } = await query;
+      
+      if (error) throw error;
+      
+      const violationsArray = violations || [];
+      
+      // Calcular estatísticas
+      const totalViolations = violationsArray.length;
+      const vehiclesWithViolations = new Set(violationsArray.map(v => v.vehicle_id)).size;
+      const averageExcessSpeed = totalViolations > 0
+        ? violationsArray.reduce((sum, v) => sum + v.excess_speed, 0) / totalViolations
+        : 0;
+      
+      // Agrupar por dia
+      const violationsByDay: { date: string; count: number }[] = [];
+      const dayMap = new Map<string, number>();
+      
+      violationsArray.forEach(v => {
+        const date = v.timestamp.split("T")[0];
+        dayMap.set(date, (dayMap.get(date) || 0) + 1);
+      });
+      
+      dayMap.forEach((count, date) => {
+        violationsByDay.push({ date, count });
+      });
+      
+      violationsByDay.sort((a, b) => a.date.localeCompare(b.date));
+      
+      // Top violadores
+      const vehicleViolations = new Map<string, { vehicleName: string; count: number; totalExcess: number; lastViolation: string }>();
+      
+      violationsArray.forEach(v => {
+        const existing = vehicleViolations.get(v.vehicle_id);
+        if (!existing) {
+          vehicleViolations.set(v.vehicle_id, {
+            vehicleName: v.vehicle_name,
+            count: 1,
+            totalExcess: v.excess_speed,
+            lastViolation: v.timestamp,
+          });
+        } else {
+          existing.count++;
+          existing.totalExcess += v.excess_speed;
+          if (v.timestamp > existing.lastViolation) {
+            existing.lastViolation = v.timestamp;
+          }
+        }
+      });
+      
+      const topViolators = Array.from(vehicleViolations.entries())
+        .map(([vehicleId, data]) => ({
+          vehicleId,
+          vehicleName: data.vehicleName,
+          totalViolations: data.count,
+          averageExcessSpeed: data.totalExcess / data.count,
+          lastViolation: data.lastViolation,
+        }))
+        .sort((a, b) => b.totalViolations - a.totalViolations)
+        .slice(0, 10);
+      
+      const stats: VehicleStats = {
+        totalViolations,
+        vehiclesWithViolations,
+        averageExcessSpeed,
+        violationsByDay,
+        topViolators,
+      };
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Erro ao buscar estatísticas:", error);
+      res.status(500).json({ message: "Erro ao buscar estatísticas" });
+    }
+  });
+
+  // GET /api/reports/violations - Listar violações
+  app.get("/api/reports/violations", async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      
+      let query = supabase
+        .from("speed_violations")
+        .select("*")
+        .order("timestamp", { ascending: false });
+      
+      if (from) {
+        query = query.gte("timestamp", from as string);
+      }
+      if (to) {
+        query = query.lte("timestamp", to as string);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      
+      const violations = (data || []).map(transformSpeedViolation);
+      res.json(violations);
+    } catch (error) {
+      console.error("Erro ao buscar violações:", error);
+      res.status(500).json({ message: "Erro ao buscar violações" });
+    }
+  });
+
+  // ============================================
+  // Dashboard Stats API
+  // ============================================
+  
+  // GET /api/stats - Estatísticas do dashboard
+  app.get("/api/stats", async (_req, res) => {
+    try {
+      // Buscar contagens de veículos
+      const { data: vehiclesData, error: vehiclesError } = await supabase
+        .from("vehicles")
+        .select("id, status");
+      
+      if (vehiclesError) throw vehiclesError;
+      
+      const vehicles = vehiclesData || [];
+      const totalVehicles = vehicles.length;
+      const activeVehicles = vehicles.filter(v => v.status !== "offline").length;
+      const movingVehicles = vehicles.filter(v => v.status === "moving").length;
+      
+      // Buscar contagens de alertas
+      const { data: alertsData, error: alertsError } = await supabase
+        .from("alerts")
+        .select("id, read");
+      
+      if (alertsError) throw alertsError;
+      
+      const alerts = alertsData || [];
+      const totalAlerts = alerts.length;
+      const unreadAlerts = alerts.filter(a => !a.read).length;
+      
+      // Buscar contagens de geofences
+      const { data: geofencesData, error: geofencesError } = await supabase
+        .from("geofences")
+        .select("id, active");
+      
+      if (geofencesError) throw geofencesError;
+      
+      const geofences = geofencesData || [];
+      const totalGeofences = geofences.length;
+      const activeGeofences = geofences.filter(g => g.active).length;
+      
+      res.json({
+        totalVehicles,
+        activeVehicles,
+        movingVehicles,
+        totalAlerts,
+        unreadAlerts,
+        totalGeofences,
+        activeGeofences,
+      });
+    } catch (error) {
+      console.error("Erro ao buscar estatísticas:", error);
+      res.status(500).json({ message: "Erro ao buscar estatísticas" });
+    }
+  });
+
+  // ============================================
+  // WebSocket para atualizações em tempo real
+  // ============================================
+  
+  const wss = new WebSocketServer({ server, path: "/ws" });
+  
+  // Armazenar clientes conectados
+  const clients = new Set<WebSocket>();
+  
+  wss.on("connection", async (ws) => {
+    console.log("Cliente WebSocket conectado");
     clients.add(ws);
-    console.log("WebSocket client connected");
 
-    storage.getVehicles().then(vehicles => {
-      ws.send(JSON.stringify({ type: "vehicles", data: vehicles }));
-    });
+    // Enviar dados iniciais
+    try {
+      const { data } = await supabase
+        .from("vehicles")
+        .select("*")
+        .order("name");
+      
+      if (data) {
+        const vehicles = data.map(transformVehicle);
+        ws.send(JSON.stringify({ type: "vehicles", data: vehicles }));
+      }
+    } catch (error) {
+      console.error("Erro ao enviar dados iniciais:", error);
+    }
 
     ws.on("close", () => {
       clients.delete(ws);
-      console.log("WebSocket client disconnected");
+      console.log("Cliente WebSocket desconectado");
     });
 
     ws.on("error", (error) => {
-      console.error("WebSocket error:", error);
+      console.error("Erro no WebSocket:", error);
       clients.delete(ws);
     });
   });
 
-  app.get("/api/vehicles", async (req, res) => {
+  // Função para broadcast de atualizações para todos os clientes
+  async function broadcastVehicleUpdates() {
+    if (clients.size === 0) return;
+    
     try {
-      const vehicles = await storage.getVehicles();
-      res.json(vehicles);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch vehicles" });
-    }
-  });
-
-  app.get("/api/vehicles/:id", async (req, res) => {
-    try {
-      const vehicle = await storage.getVehicle(req.params.id);
-      if (!vehicle) {
-        return res.status(404).json({ error: "Vehicle not found" });
-      }
-      res.json(vehicle);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch vehicle" });
-    }
-  });
-
-  app.post("/api/vehicles", async (req, res) => {
-    try {
-      const parsed = insertVehicleSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid vehicle data", details: parsed.error.errors });
-      }
-      const vehicle = await storage.createVehicle(parsed.data);
-      res.status(201).json(vehicle);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create vehicle" });
-    }
-  });
-
-  app.patch("/api/vehicles/:id", async (req, res) => {
-    try {
-      const parsed = insertVehicleSchema.partial().safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid vehicle data", details: parsed.error.errors });
-      }
-      const vehicle = await storage.updateVehicle(req.params.id, parsed.data);
-      if (!vehicle) {
-        return res.status(404).json({ error: "Vehicle not found" });
-      }
-      res.json(vehicle);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update vehicle" });
-    }
-  });
-
-  app.delete("/api/vehicles/:id", async (req, res) => {
-    try {
-      const success = await storage.deleteVehicle(req.params.id);
-      if (!success) {
-        return res.status(404).json({ error: "Vehicle not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete vehicle" });
-    }
-  });
-
-  app.get("/api/geofences", async (req, res) => {
-    try {
-      const geofences = await storage.getGeofences();
-      res.json(geofences);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch geofences" });
-    }
-  });
-
-  app.get("/api/geofences/:id", async (req, res) => {
-    try {
-      const geofence = await storage.getGeofence(req.params.id);
-      if (!geofence) {
-        return res.status(404).json({ error: "Geofence not found" });
-      }
-      res.json(geofence);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch geofence" });
-    }
-  });
-
-  app.post("/api/geofences", async (req, res) => {
-    try {
-      const geofence = await storage.createGeofence(req.body);
-      res.status(201).json(geofence);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create geofence" });
-    }
-  });
-
-  app.patch("/api/geofences/:id", async (req, res) => {
-    try {
-      const geofence = await storage.updateGeofence(req.params.id, req.body);
-      if (!geofence) {
-        return res.status(404).json({ error: "Geofence not found" });
-      }
-      res.json(geofence);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update geofence" });
-    }
-  });
-
-  app.delete("/api/geofences/:id", async (req, res) => {
-    try {
-      const success = await storage.deleteGeofence(req.params.id);
-      if (!success) {
-        return res.status(404).json({ error: "Geofence not found" });
-      }
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete geofence" });
-    }
-  });
-
-  app.get("/api/alerts", async (req, res) => {
-    try {
-      const alerts = await storage.getAlerts();
-      res.json(alerts);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch alerts" });
-    }
-  });
-
-  app.get("/api/alerts/:id", async (req, res) => {
-    try {
-      const alert = await storage.getAlert(req.params.id);
-      if (!alert) {
-        return res.status(404).json({ error: "Alert not found" });
-      }
-      res.json(alert);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch alert" });
-    }
-  });
-
-  app.post("/api/alerts", async (req, res) => {
-    try {
-      const alert = await storage.createAlert(req.body);
-      res.status(201).json(alert);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to create alert" });
-    }
-  });
-
-  app.patch("/api/alerts/:id", async (req, res) => {
-    try {
-      const alert = await storage.updateAlert(req.params.id, req.body);
-      if (!alert) {
-        return res.status(404).json({ error: "Alert not found" });
-      }
-      res.json(alert);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update alert" });
-    }
-  });
-
-  app.post("/api/alerts/mark-all-read", async (req, res) => {
-    try {
-      await storage.markAllAlertsRead();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to mark alerts as read" });
-    }
-  });
-
-  app.delete("/api/alerts/clear-read", async (req, res) => {
-    try {
-      await storage.clearReadAlerts();
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to clear read alerts" });
-    }
-  });
-
-  app.get("/api/trips", async (req, res) => {
-    try {
-      const { vehicleId, startDate, endDate } = req.query;
+      const { data } = await supabase
+        .from("vehicles")
+        .select("*")
+        .order("name");
       
-      if (!vehicleId || typeof vehicleId !== "string") {
-        return res.status(400).json({ error: "Vehicle ID is required" });
+      if (data) {
+        const vehicles = data.map(transformVehicle);
+        const message = JSON.stringify({ type: "vehicles", data: vehicles });
+        
+        clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+          }
+        });
       }
-      
-      const start = startDate ? String(startDate) : new Date().toISOString();
-      const end = endDate ? String(endDate) : new Date().toISOString();
-      
-      const trips = await storage.getTrips(vehicleId, start, end);
-      res.json(trips);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch trips" });
+      console.error("Erro ao buscar veículos para broadcast:", error);
     }
-  });
+  }
 
-  app.get("/api/reports/violations", async (req, res) => {
-    try {
-      const { startDate, endDate } = req.query;
-      
-      const start = startDate ? String(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const end = endDate ? String(endDate) : new Date().toISOString();
-      
-      const violations = await storage.getSpeedViolations(start, end);
-      res.json(violations);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch violations" });
-    }
-  });
+  // Configurar Supabase Realtime para atualizações automáticas
+  const channel = supabase
+    .channel("vehicles-changes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "vehicles" },
+      () => {
+        broadcastVehicleUpdates();
+      }
+    )
+    .subscribe();
 
-  app.get("/api/reports/speed-stats", async (req, res) => {
-    try {
-      const { startDate, endDate } = req.query;
-      
-      const start = startDate ? String(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const end = endDate ? String(endDate) : new Date().toISOString();
-      
-      const stats = await storage.getSpeedStats(start, end);
-      res.json(stats);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch speed stats" });
-    }
-  });
-
-  return httpServer;
+  // Fallback: Atualizar a cada 5 segundos se Realtime não estiver funcionando
+  setInterval(broadcastVehicleUpdates, 5000);
 }

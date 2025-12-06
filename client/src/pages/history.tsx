@@ -123,7 +123,7 @@ export default function History() {
     if (routePositions.length > 0) {
       return routePositions[Math.floor(routePositions.length / 2)];
     }
-    return [-23.5505, -46.6333] as [number, number];
+    return [-3.1190, -60.0217] as [number, number];
   }, [routePositions]);
 
   return (

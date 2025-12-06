@@ -134,7 +134,7 @@ export function FleetMap({
   const mapRef = useRef<any>(null);
   const [mapLayer, setMapLayer] = useState<"street" | "satellite">("street");
 
-  const defaultCenter: [number, number] = [-23.5505, -46.6333];
+  const defaultCenter: [number, number] = [-3.1190, -60.0217];
   const defaultZoom = 12;
 
   const handleZoomIn = () => {
