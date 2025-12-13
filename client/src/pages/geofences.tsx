@@ -348,6 +348,7 @@ export default function GeofencesPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           openEditDialog(geofence);
+                          openEditDialog(geofence);
                         }}
                         data-testid={`edit-${geofence.id}`}
                       >
