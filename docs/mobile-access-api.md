@@ -265,3 +265,4 @@ As credenciais podem ser gerenciadas na interface web:
 4. Visualize/copie o código de acesso e PIN
 5. Altere o PIN ou regenere o código conforme necessário
 
+

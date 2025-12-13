@@ -232,8 +232,10 @@ export default function VehiclesPage() {
     }
   });
 
-  const getStatusColor = (status: Vehicle["status"]) => {
-    switch (status) {
+  // Retorna cor do status considerando isConnected como prioridade (azul)
+  const getStatusColor = (vehicle: Vehicle) => {
+    if (vehicle.isConnected) return "bg-blue-500";
+    switch (vehicle.status) {
       case "moving": return "bg-green-500";
       case "stopped": return "bg-amber-500";
       case "idle": return "bg-amber-500";
@@ -241,8 +243,10 @@ export default function VehiclesPage() {
     }
   };
 
-  const getStatusLabel = (status: Vehicle["status"]) => {
-    switch (status) {
+  // Retorna label do status considerando isConnected como prioridade
+  const getStatusLabel = (vehicle: Vehicle) => {
+    if (vehicle.isConnected) return "Conectado";
+    switch (vehicle.status) {
       case "moving": return "Em Movimento";
       case "stopped": return "Parado";
       case "idle": return "Ocioso";
@@ -357,9 +361,9 @@ export default function VehiclesPage() {
                         </div>
                         <Badge 
                           variant="secondary" 
-                          className={cn("text-[10px] text-white", getStatusColor(vehicle.status))}
+                          className={cn("text-[10px] text-white", getStatusColor(vehicle))}
                         >
-                          {getStatusLabel(vehicle.status)}
+                          {getStatusLabel(vehicle)}
                         </Badge>
                       </div>
                       

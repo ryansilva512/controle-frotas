@@ -17,6 +17,7 @@ function transformVehicle(row: any): Vehicle {
     model: row.model,
     status: row.status,
     ignition: row.ignition,
+    isConnected: row.is_connected ?? false,
     currentSpeed: row.current_speed,
     speedLimit: row.speed_limit,
     heading: row.heading,
@@ -132,10 +133,13 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(401).json({ message: "PIN incorreto" });
       }
       
-      // Atualizar último login
+      // Atualizar último login e marcar como conectado
       await supabase
         .from("vehicles")
-        .update({ last_login: new Date().toISOString() })
+        .update({ 
+          last_login: new Date().toISOString(),
+          is_connected: true,
+        })
         .eq("id", vehicle.id);
       
       // Gerar token simples (em produção, use JWT)
@@ -195,6 +199,7 @@ export async function registerRoutes(server: Server, app: Express) {
           battery_level: batteryLevel,
           status,
           ignition: currentSpeed > 0 ? "on" : "off",
+          is_connected: true,
           last_update: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
@@ -213,6 +218,48 @@ export async function registerRoutes(server: Server, app: Express) {
     } catch (error) {
       console.error("Erro ao enviar localização:", error);
       res.status(500).json({ message: "Erro ao enviar localização" });
+    }
+  });
+
+  // POST /api/vehicle-auth/logout - Logout do veículo (mobile)
+  app.post("/api/vehicle-auth/logout", async (req, res) => {
+    try {
+      const authHeader = req.header("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return res.status(401).json({ message: "Token não fornecido" });
+      }
+      
+      const token = authHeader.substring(7);
+      let vehicleId: string;
+      
+      try {
+        const decoded = Buffer.from(token, "base64").toString("utf-8");
+        vehicleId = decoded.split(":")[0];
+      } catch {
+        return res.status(401).json({ message: "Token inválido" });
+      }
+      
+      // Marcar veículo como desconectado
+      const { error } = await supabase
+        .from("vehicles")
+        .update({
+          is_connected: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", vehicleId);
+      
+      if (error) {
+        console.error("Erro ao fazer logout:", error);
+        return res.status(500).json({ message: "Erro ao fazer logout" });
+      }
+      
+      res.json({
+        success: true,
+        message: "Logout realizado com sucesso",
+      });
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      res.status(500).json({ message: "Erro ao fazer logout" });
     }
   });
 
@@ -380,6 +427,7 @@ export async function registerRoutes(server: Server, app: Express) {
             current_speed: speed,
             status,
             ignition: speed > 0 ? "on" : "off",
+            is_connected: true,
             last_update: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
@@ -1146,6 +1194,26 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   }
 
+  // Função para desconectar veículos inativos (sem atualização há mais de 60 segundos)
+  async function disconnectInactiveVehicles() {
+    try {
+      const timeoutSeconds = 60;
+      const cutoffTime = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
+      
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ is_connected: false })
+        .eq("is_connected", true)
+        .lt("last_update", cutoffTime);
+      
+      if (error) {
+        console.error("Erro ao desconectar veículos inativos:", error);
+      }
+    } catch (error) {
+      console.error("Erro ao verificar veículos inativos:", error);
+    }
+  }
+
   // Configurar Supabase Realtime para atualizações automáticas
   const channel = supabase
     .channel("vehicles-changes")
@@ -1160,4 +1228,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
   // Fallback: Atualizar a cada 5 segundos se Realtime não estiver funcionando
   setInterval(broadcastVehicleUpdates, 5000);
+  
+  // Verificar e desconectar veículos inativos a cada 10 segundos
+  setInterval(disconnectInactiveVehicles, 10000);
 }

@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import { 
-  Map, History, Shield, Bell, BarChart3, Truck
+  Map, History, Shield, Bell, BarChart3, Truck, Home
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+import HomePage from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import HistoryPage from "@/pages/history";
 import GeofencesPage from "@/pages/geofences";
@@ -34,7 +35,8 @@ function Navigation() {
   const unreadAlerts = alerts.filter(a => !a.read).length;
 
   const navItems = [
-    { path: "/", label: "Dashboard", icon: Map },
+    { path: "/", label: "Home", icon: Home },
+    { path: "/dashboard", label: "Mapa", icon: Map },
     { path: "/vehicles", label: "Veículos", icon: Truck },
     { path: "/history", label: "Histórico", icon: History },
     { path: "/geofences", label: "Geofences", icon: Shield },
@@ -67,7 +69,7 @@ function Navigation() {
                   "gap-2 relative",
                   isActive && "font-medium"
                 )}
-                data-testid={`nav-${item.path.replace("/", "") || "dashboard"}`}
+                data-testid={`nav-${item.path.replace("/", "") || "home"}`}
               >
                 <item.icon className="h-4 w-4" />
                 <span className="hidden sm:inline">{item.label}</span>
@@ -98,7 +100,8 @@ function Navigation() {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
+      <Route path="/" component={HomePage} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/vehicles" component={VehiclesPage} />
       <Route path="/history" component={HistoryPage} />
       <Route path="/geofences" component={GeofencesPage} />
