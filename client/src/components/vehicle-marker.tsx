@@ -1,5 +1,6 @@
 import { Marker, Popup } from "react-leaflet";
 import L from "leaflet";
+import { useEffect, useRef } from "react";
 import type { Vehicle } from "@shared/schema";
 
 const createVehicleIcon = (heading: number, status: Vehicle["status"]) => {
@@ -31,6 +32,16 @@ interface VehicleMarkerProps {
 
 export function VehicleMarker({ vehicle, isSelected, onClick }: VehicleMarkerProps) {
   const icon = createVehicleIcon(vehicle.heading, vehicle.status);
+  const markerRef = useRef<L.Marker | null>(null);
+
+  useEffect(() => {
+    if (!markerRef.current) return;
+    if (isSelected) {
+      markerRef.current.openPopup();
+    } else {
+      markerRef.current.closePopup();
+    }
+  }, [isSelected]);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -46,6 +57,7 @@ export function VehicleMarker({ vehicle, isSelected, onClick }: VehicleMarkerPro
     <Marker
       position={[vehicle.latitude, vehicle.longitude]}
       icon={icon}
+      ref={markerRef}
       eventHandlers={{
         click: onClick,
       }}

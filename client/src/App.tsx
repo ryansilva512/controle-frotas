@@ -18,6 +18,7 @@ import HistoryPage from "@/pages/history";
 import GeofencesPage from "@/pages/geofences";
 import AlertsPage from "@/pages/alerts";
 import ReportsPage from "@/pages/reports";
+import VehiclesPage from "@/pages/vehicles";
 import NotFound from "@/pages/not-found";
 
 import type { Alert } from "@shared/schema";
@@ -34,6 +35,7 @@ function Navigation() {
 
   const navItems = [
     { path: "/", label: "Dashboard", icon: Map },
+    { path: "/vehicles", label: "Veículos", icon: Truck },
     { path: "/history", label: "Histórico", icon: History },
     { path: "/geofences", label: "Geofences", icon: Shield },
     { path: "/alerts", label: "Alertas", icon: Bell, badge: unreadAlerts > 0 ? unreadAlerts : undefined },
@@ -91,6 +93,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/vehicles" component={VehiclesPage} />
       <Route path="/history" component={HistoryPage} />
       <Route path="/geofences" component={GeofencesPage} />
       <Route path="/alerts" component={AlertsPage} />

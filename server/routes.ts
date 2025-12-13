@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import { z } from "zod";
 import { supabase } from "./lib/supabase";
 import type { Vehicle, Alert, Geofence, Trip, LocationPoint, RouteEvent, VehicleStats, SpeedViolation } from "@shared/schema";
 
@@ -104,6 +105,103 @@ function transformSpeedViolation(row: any): SpeedViolation {
 }
 
 export async function registerRoutes(server: Server, app: Express) {
+  // ============================================
+  // Telemetry API
+  // ============================================
+  const telemetryApiKey = process.env.TELEMETRY_API_KEY;
+
+  const telemetrySchema = z.object({
+    licensePlate: z.string().min(1, "licensePlate é obrigatório"),
+    latitude: z.coerce.number(),
+    longitude: z.coerce.number(),
+    speed: z.coerce.number(),
+  });
+
+  app.post("/api/telemetry", async (req, res) => {
+    try {
+      if (!telemetryApiKey) {
+        console.warn("TELEMETRY_API_KEY não configurada");
+        return res.status(500).json({ message: "Configuração ausente: TELEMETRY_API_KEY" });
+      }
+
+      const providedKey = req.header("x-api-key");
+      if (!providedKey || providedKey !== telemetryApiKey) {
+        return res.status(401).json({ message: "API key inválida" });
+      }
+
+      const parsed = telemetrySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Payload inválido",
+          errors: parsed.error.flatten().fieldErrors,
+        });
+      }
+
+      const { licensePlate, latitude, longitude, speed } = parsed.data;
+
+      // Log para rastreabilidade
+      console.info(
+        `[telemetry] ${licensePlate} lat=${latitude} lon=${longitude} speed=${speed}`,
+      );
+
+      // Normalizar placa: remover hífen e espaços, converter para maiúsculas
+      const normalizedPlate = licensePlate.replace(/[-\s]/g, "").toUpperCase();
+
+      // Buscar todos os veículos e filtrar pela placa normalizada
+      const { data: allVehicles } = await supabase
+        .from("vehicles")
+        .select("id, license_plate");
+
+      // Encontrar veículo cuja placa normalizada corresponda
+      const matchedVehicle = allVehicles?.find((v) => {
+        const dbPlateNormalized = v.license_plate.replace(/[-\s]/g, "").toUpperCase();
+        return dbPlateNormalized === normalizedPlate;
+      });
+
+      let updatedVehicleId: string | null = null;
+
+      if (matchedVehicle) {
+        // Atualizar o veículo encontrado
+        const vehicleId = matchedVehicle.id;
+        
+        // Determinar status baseado na velocidade
+        const status = speed > 1 ? "moving" : speed > 0 ? "idle" : "stopped";
+        
+        const { error: updateError } = await supabase
+          .from("vehicles")
+          .update({
+            latitude,
+            longitude,
+            current_speed: speed,
+            status,
+            ignition: speed > 0 ? "on" : "off",
+            last_update: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", vehicleId);
+
+        if (!updateError) {
+          updatedVehicleId = vehicleId;
+          console.info(`[telemetry] Veículo ${licensePlate} atualizado (id: ${vehicleId})`);
+        } else {
+          console.error(`[telemetry] Erro ao atualizar veículo:`, updateError);
+        }
+      } else {
+        console.warn(`[telemetry] Veículo com placa ${licensePlate} (normalizada: ${normalizedPlate}) não encontrado no banco`);
+      }
+
+      res.status(200).json({
+        message: "Telemetria recebida",
+        receivedAt: new Date().toISOString(),
+        vehicleUpdated: updatedVehicleId !== null,
+        vehicleId: updatedVehicleId,
+      });
+    } catch (error) {
+      console.error("Erro ao receber telemetria:", error);
+      res.status(500).json({ message: "Erro ao receber telemetria" });
+    }
+  });
+
   // ============================================
   // Vehicles API
   // ============================================
