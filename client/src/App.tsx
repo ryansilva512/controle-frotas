@@ -44,11 +44,14 @@ function Navigation() {
 
   return (
     <header className="h-16 border-b border-border bg-card flex items-center px-6 gap-6 sticky top-0 z-50">
-      <Link href="/" className="flex items-center gap-2">
-        <div className="h-9 w-9 rounded-md bg-primary flex items-center justify-center">
-          <Truck className="h-5 w-5 text-primary-foreground" />
+      <Link href="/" className="flex items-center gap-3 group">
+        <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-zinc-900 to-zinc-800 dark:from-zinc-100 dark:to-zinc-200 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform ring-2 ring-zinc-300 dark:ring-zinc-700">
+          <span className="text-white dark:text-zinc-900 font-black text-lg">V</span>
         </div>
-        <span className="font-semibold text-lg hidden md:block">FleetTrack</span>
+        <div className="hidden md:flex flex-col -space-y-1">
+          <span className="font-bold text-lg tracking-tight">VascoTrack</span>
+          <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Controle de Frotas</span>
+        </div>
       </Link>
       
       <nav className="flex items-center gap-1 flex-1">
@@ -68,13 +71,16 @@ function Navigation() {
               >
                 <item.icon className="h-4 w-4" />
                 <span className="hidden sm:inline">{item.label}</span>
-                {item.badge !== undefined && (
-                  <Badge 
-                    variant="destructive" 
-                    className="h-5 min-w-5 px-1 text-[10px] absolute -top-1 -right-1"
-                  >
-                    {item.badge > 99 ? "99+" : item.badge}
-                  </Badge>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className="absolute -top-1 -right-1 flex items-center justify-center">
+                    <span className="animate-ping absolute inline-flex h-4 w-4 rounded-full bg-primary opacity-75"></span>
+                    <Badge 
+                      variant="default" 
+                      className="relative h-5 min-w-5 px-1 text-[10px] animate-pulse"
+                    >
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </Badge>
+                  </span>
                 )}
               </Button>
             </Link>

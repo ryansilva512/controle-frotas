@@ -106,6 +106,211 @@ function transformSpeedViolation(row: any): SpeedViolation {
 
 export async function registerRoutes(server: Server, app: Express) {
   // ============================================
+  // Vehicle Authentication API (Mobile Access)
+  // ============================================
+  
+  // POST /api/vehicle-auth/login - Login do veículo (mobile)
+  app.post("/api/vehicle-auth/login", async (req, res) => {
+    try {
+      const { accessCode, pin } = req.body;
+      
+      if (!accessCode || !pin) {
+        return res.status(400).json({ message: "Código de acesso e PIN são obrigatórios" });
+      }
+      
+      const { data: vehicle, error } = await supabase
+        .from("vehicles")
+        .select("id, name, license_plate, access_code, access_pin")
+        .eq("access_code", accessCode.toUpperCase())
+        .single();
+      
+      if (error || !vehicle) {
+        return res.status(401).json({ message: "Código de acesso inválido" });
+      }
+      
+      if (vehicle.access_pin !== pin) {
+        return res.status(401).json({ message: "PIN incorreto" });
+      }
+      
+      // Atualizar último login
+      await supabase
+        .from("vehicles")
+        .update({ last_login: new Date().toISOString() })
+        .eq("id", vehicle.id);
+      
+      // Gerar token simples (em produção, use JWT)
+      const token = Buffer.from(`${vehicle.id}:${Date.now()}`).toString("base64");
+      
+      res.json({
+        success: true,
+        token,
+        vehicle: {
+          id: vehicle.id,
+          name: vehicle.name,
+          licensePlate: vehicle.license_plate,
+        },
+      });
+    } catch (error) {
+      console.error("Erro no login do veículo:", error);
+      res.status(500).json({ message: "Erro no login" });
+    }
+  });
+
+  // POST /api/vehicle-auth/send-location - Enviar localização (mobile)
+  app.post("/api/vehicle-auth/send-location", async (req, res) => {
+    try {
+      const authHeader = req.header("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return res.status(401).json({ message: "Token não fornecido" });
+      }
+      
+      const token = authHeader.substring(7);
+      let vehicleId: string;
+      
+      try {
+        const decoded = Buffer.from(token, "base64").toString("utf-8");
+        vehicleId = decoded.split(":")[0];
+      } catch {
+        return res.status(401).json({ message: "Token inválido" });
+      }
+      
+      const { latitude, longitude, speed, heading, accuracy, batteryLevel } = req.body;
+      
+      if (latitude === undefined || longitude === undefined) {
+        return res.status(400).json({ message: "Latitude e longitude são obrigatórios" });
+      }
+      
+      // Determinar status baseado na velocidade
+      const currentSpeed = speed || 0;
+      const status = currentSpeed > 1 ? "moving" : currentSpeed > 0 ? "idle" : "stopped";
+      
+      const { error } = await supabase
+        .from("vehicles")
+        .update({
+          latitude,
+          longitude,
+          current_speed: currentSpeed,
+          heading: heading || 0,
+          accuracy: accuracy || 10,
+          battery_level: batteryLevel,
+          status,
+          ignition: currentSpeed > 0 ? "on" : "off",
+          last_update: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", vehicleId);
+      
+      if (error) {
+        console.error("Erro ao atualizar localização:", error);
+        return res.status(500).json({ message: "Erro ao atualizar localização" });
+      }
+      
+      res.json({
+        success: true,
+        message: "Localização atualizada",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Erro ao enviar localização:", error);
+      res.status(500).json({ message: "Erro ao enviar localização" });
+    }
+  });
+
+  // GET /api/vehicles/:id/credentials - Obter credenciais do veículo
+  app.get("/api/vehicles/:id/credentials", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("id, name, license_plate, access_code, access_pin, last_login")
+        .eq("id", req.params.id)
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Veículo não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json({
+        vehicleId: data.id,
+        vehicleName: data.name,
+        licensePlate: data.license_plate,
+        accessCode: data.access_code,
+        pin: data.access_pin,
+        lastLogin: data.last_login,
+      });
+    } catch (error) {
+      console.error("Erro ao buscar credenciais:", error);
+      res.status(500).json({ message: "Erro ao buscar credenciais" });
+    }
+  });
+
+  // PATCH /api/vehicles/:id/credentials - Atualizar credenciais do veículo
+  app.patch("/api/vehicles/:id/credentials", async (req, res) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!pin || pin.length < 4) {
+        return res.status(400).json({ message: "PIN deve ter pelo menos 4 caracteres" });
+      }
+      
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update({ access_pin: pin })
+        .eq("id", req.params.id)
+        .select("id, name, access_code, access_pin")
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Veículo não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json({
+        success: true,
+        accessCode: data.access_code,
+        pin: data.access_pin,
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar credenciais:", error);
+      res.status(500).json({ message: "Erro ao atualizar credenciais" });
+    }
+  });
+
+  // POST /api/vehicles/:id/regenerate-code - Regenerar código de acesso
+  app.post("/api/vehicles/:id/regenerate-code", async (req, res) => {
+    try {
+      // Gerar novo código aleatório de 8 caracteres
+      const newCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+      
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update({ access_code: newCode })
+        .eq("id", req.params.id)
+        .select("id, name, access_code")
+        .single();
+      
+      if (error) {
+        if (error.code === "PGRST116") {
+          return res.status(404).json({ message: "Veículo não encontrado" });
+        }
+        throw error;
+      }
+      
+      res.json({
+        success: true,
+        accessCode: data.access_code,
+      });
+    } catch (error) {
+      console.error("Erro ao regenerar código:", error);
+      res.status(500).json({ message: "Erro ao regenerar código" });
+    }
+  });
+
+  // ============================================
   // Telemetry API
   // ============================================
   const telemetryApiKey = process.env.TELEMETRY_API_KEY;
@@ -580,6 +785,53 @@ export async function registerRoutes(server: Server, app: Express) {
   // Trips/History API
   // ============================================
   
+  // GET /api/trips - Listar todas as viagens
+  app.get("/api/trips", async (req, res) => {
+    try {
+      const { from, to, vehicleId } = req.query;
+      
+      let query = supabase
+        .from("trips")
+        .select("*")
+        .order("start_time", { ascending: false });
+      
+      if (vehicleId) {
+        query = query.eq("vehicle_id", vehicleId as string);
+      }
+      if (from) {
+        query = query.gte("start_time", from as string);
+      }
+      if (to) {
+        query = query.lte("end_time", to as string);
+      }
+      
+      const { data: tripsData, error: tripsError } = await query;
+      
+      if (tripsError) throw tripsError;
+      
+      // Transformar dados
+      const trips = (tripsData || []).map((tripRow: any) => ({
+        id: tripRow.id,
+        vehicleId: tripRow.vehicle_id,
+        startTime: tripRow.start_time,
+        endTime: tripRow.end_time,
+        totalDistance: tripRow.total_distance,
+        travelTime: tripRow.travel_time,
+        stoppedTime: tripRow.stopped_time,
+        averageSpeed: tripRow.average_speed,
+        maxSpeed: tripRow.max_speed,
+        stopsCount: tripRow.stops_count,
+        points: [],
+        events: [],
+      }));
+      
+      res.json(trips);
+    } catch (error) {
+      console.error("Erro ao buscar viagens:", error);
+      res.status(500).json({ message: "Erro ao buscar viagens" });
+    }
+  });
+
   // GET /api/vehicles/:id/trips - Listar viagens de um veículo
   app.get("/api/vehicles/:id/trips", async (req, res) => {
     try {
@@ -864,9 +1116,13 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // Função para broadcast de atualizações para todos os clientes
+  let isBroadcasting = false;
+  
   async function broadcastVehicleUpdates() {
     if (clients.size === 0) return;
+    if (isBroadcasting) return; // Evita execuções sobrepostas
     
+    isBroadcasting = true;
     try {
       const { data } = await supabase
         .from("vehicles")
@@ -885,6 +1141,8 @@ export async function registerRoutes(server: Server, app: Express) {
       }
     } catch (error) {
       console.error("Erro ao buscar veículos para broadcast:", error);
+    } finally {
+      isBroadcasting = false;
     }
   }
 

@@ -128,7 +128,15 @@ export default function AlertsPage() {
     <div className="flex h-full" data-testid="alerts-page">
       <div className="w-[280px] flex-shrink-0 border-r border-border bg-sidebar flex flex-col">
         <div className="p-4 border-b border-sidebar-border">
-          <h2 className="font-semibold text-lg mb-1">Alertas</h2>
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="font-semibold text-lg">Alertas</h2>
+            {unreadCount > 0 && (
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             {unreadCount > 0 ? `${unreadCount} não lidos` : "Todos os alertas lidos"}
           </p>

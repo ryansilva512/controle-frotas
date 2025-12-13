@@ -348,7 +348,6 @@ export default function GeofencesPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           openEditDialog(geofence);
-                          openEditDialog(geofence);
                         }}
                         data-testid={`edit-${geofence.id}`}
                       >
@@ -534,7 +533,7 @@ export default function GeofencesPage() {
                 
                 <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-red-500" />
+                    <MapPin className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                     <span className="text-sm">Alertar saída</span>
                   </div>
                   <Switch
@@ -715,7 +714,7 @@ export default function GeofencesPage() {
                 
                 <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-red-500" />
+                    <MapPin className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                     <span className="text-sm">Alertar saída</span>
                   </div>
                   <Switch
@@ -773,7 +772,8 @@ export default function GeofencesPage() {
             
             <div className="flex-1 rounded-lg overflow-hidden border">
               <MapContainer
-                center={formData.center ? [formData.center.latitude, formData.center.longitude] : [-23.5505, -46.6333]}
+                key={editingGeofence?.id}
+                center={formData.center ? [formData.center.latitude, formData.center.longitude] : [-3.1190, -60.0217]}
                 zoom={13}
                 className="h-full w-full"
                 zoomControl={true}

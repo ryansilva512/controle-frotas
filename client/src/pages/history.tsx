@@ -59,7 +59,7 @@ export default function History() {
   });
 
   const { data: trips = [], isLoading: isLoadingTrips } = useQuery<Trip[]>({
-    queryKey: ["/api/trips", selectedVehicleId, dateRange.from.toISOString(), dateRange.to.toISOString()],
+    queryKey: [`/api/vehicles/${selectedVehicleId}/trips?from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`],
     enabled: !!selectedVehicleId,
   });
 
@@ -93,7 +93,7 @@ export default function History() {
   const getEventIcon = (type: RouteEvent["type"]) => {
     switch (type) {
       case "departure": return <Play className="h-4 w-4 text-green-500" />;
-      case "arrival": return <CheckCircle2 className="h-4 w-4 text-red-500" />;
+      case "arrival": return <CheckCircle2 className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />;
       case "stop": return <PauseCircle className="h-4 w-4 text-amber-500" />;
       case "speed_violation": return <AlertTriangle className="h-4 w-4 text-destructive" />;
       case "geofence_entry":
@@ -249,7 +249,7 @@ export default function History() {
                   <Marker position={routePositions[routePositions.length - 1]} icon={endIcon}>
                     <Popup>
                       <div className="text-sm">
-                        <div className="font-semibold text-red-600">Chegada</div>
+                        <div className="font-semibold text-zinc-700 dark:text-zinc-300">Chegada</div>
                         <div>{format(new Date(selectedTrip.endTime), "dd/MM/yyyy HH:mm", { locale: ptBR })}</div>
                       </div>
                     </Popup>

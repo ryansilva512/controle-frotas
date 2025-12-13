@@ -1,17 +1,32 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   X, MapPin, Gauge, Navigation, Radio, Battery, Clock, 
-  History, Shield, AlertTriangle, Bell, Activity, Settings
+  History, Shield, AlertTriangle, Bell, Activity, Settings,
+  Smartphone, Copy, RefreshCw, Eye, EyeOff, QrCode
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Vehicle, Alert } from "@shared/schema";
 import { Link } from "wouter";
+
+interface VehicleCredentials {
+  vehicleId: string;
+  vehicleName: string;
+  licensePlate: string;
+  accessCode: string;
+  pin: string;
+  lastLogin: string | null;
+}
 
 interface VehicleDetailPanelProps {
   vehicle: Vehicle;
@@ -22,8 +37,52 @@ interface VehicleDetailPanelProps {
 }
 
 export function VehicleDetailPanel({ vehicle, alerts, onClose, onFollowVehicle, isFollowing }: VehicleDetailPanelProps) {
+  const { toast } = useToast();
+  const [showPin, setShowPin] = useState(false);
+  const [newPin, setNewPin] = useState("");
+  
   const vehicleAlerts = alerts.filter(a => a.vehicleId === vehicle.id);
   const unreadAlerts = vehicleAlerts.filter(a => !a.read);
+
+  // Buscar credenciais do veículo
+  const { data: credentials, isLoading: isLoadingCredentials, refetch: refetchCredentials } = useQuery<VehicleCredentials>({
+    queryKey: [`/api/vehicles/${vehicle.id}/credentials`],
+  });
+
+  // Mutation para atualizar PIN
+  const updatePinMutation = useMutation({
+    mutationFn: async (pin: string) => {
+      return apiRequest("PATCH", `/api/vehicles/${vehicle.id}/credentials`, { pin });
+    },
+    onSuccess: () => {
+      toast({ title: "PIN atualizado com sucesso!" });
+      refetchCredentials();
+      setNewPin("");
+    },
+    onError: () => {
+      toast({ title: "Erro ao atualizar PIN", variant: "destructive" });
+    },
+  });
+
+  // Mutation para regenerar código
+  const regenerateCodeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/vehicles/${vehicle.id}/regenerate-code`);
+    },
+    onSuccess: () => {
+      toast({ title: "Código de acesso regenerado!" });
+      refetchCredentials();
+    },
+    onError: () => {
+      toast({ title: "Erro ao regenerar código", variant: "destructive" });
+    },
+  });
+
+  // Copiar para clipboard
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copiado!` });
+  };
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -89,7 +148,7 @@ export function VehicleDetailPanel({ vehicle, alerts, onClose, onFollowVehicle, 
       </div>
 
       <Tabs defaultValue="details" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mt-2 grid w-auto grid-cols-3">
+        <TabsList className="mx-4 mt-2 grid w-auto grid-cols-4">
           <TabsTrigger value="details" data-testid="tab-details">Detalhes</TabsTrigger>
           <TabsTrigger value="alerts" data-testid="tab-alerts" className="relative">
             Alertas
@@ -100,6 +159,9 @@ export function VehicleDetailPanel({ vehicle, alerts, onClose, onFollowVehicle, 
             )}
           </TabsTrigger>
           <TabsTrigger value="activity" data-testid="tab-activity">Atividade</TabsTrigger>
+          <TabsTrigger value="mobile" data-testid="tab-mobile">
+            <Smartphone className="h-4 w-4" />
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="flex-1 mt-0 p-4 space-y-4">
@@ -290,6 +352,126 @@ export function VehicleDetailPanel({ vehicle, alerts, onClose, onFollowVehicle, 
                   </div>
                 </div>
               </div>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+
+        {/* Aba de Acesso Mobile */}
+        <TabsContent value="mobile" className="flex-1 mt-0">
+          <ScrollArea className="h-full">
+            <div className="p-4 space-y-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Smartphone className="h-4 w-4" />
+                    Acesso Mobile
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {isLoadingCredentials ? (
+                    <div className="text-sm text-muted-foreground">Carregando...</div>
+                  ) : credentials ? (
+                    <>
+                      {/* Código de Acesso */}
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Código de Acesso</Label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-muted rounded-md px-3 py-2 font-mono text-lg tracking-widest text-center">
+                            {credentials.accessCode}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => copyToClipboard(credentials.accessCode, "Código")}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => regenerateCodeMutation.mutate()}
+                            disabled={regenerateCodeMutation.isPending}
+                          >
+                            <RefreshCw className={cn("h-4 w-4", regenerateCodeMutation.isPending && "animate-spin")} />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* PIN */}
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">PIN</Label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-muted rounded-md px-3 py-2 font-mono text-lg text-center flex items-center justify-center gap-2">
+                            {showPin ? credentials.pin : "••••"}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => setShowPin(!showPin)}
+                            >
+                              {showPin ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            </Button>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => copyToClipboard(credentials.pin, "PIN")}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Alterar PIN */}
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Alterar PIN</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="password"
+                            placeholder="Novo PIN (mín. 4 dígitos)"
+                            value={newPin}
+                            onChange={(e) => setNewPin(e.target.value)}
+                            className="flex-1"
+                          />
+                          <Button
+                            onClick={() => updatePinMutation.mutate(newPin)}
+                            disabled={newPin.length < 4 || updatePinMutation.isPending}
+                          >
+                            Salvar
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Último Login */}
+                      {credentials.lastLogin && (
+                        <div className="text-xs text-muted-foreground pt-2 border-t">
+                          Último acesso: {new Date(credentials.lastLogin).toLocaleString("pt-BR")}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Credenciais não disponíveis</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Instruções */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Como usar no celular</CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs text-muted-foreground space-y-2">
+                  <p>1. Abra o app de rastreamento no celular</p>
+                  <p>2. Digite o <strong>Código de Acesso</strong> e o <strong>PIN</strong></p>
+                  <p>3. O app enviará a localização automaticamente</p>
+                  <Separator className="my-3" />
+                  <p className="text-[10px]">
+                    <strong>API Endpoint:</strong><br/>
+                    POST /api/vehicle-auth/login<br/>
+                    POST /api/vehicle-auth/send-location
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </ScrollArea>
         </TabsContent>
