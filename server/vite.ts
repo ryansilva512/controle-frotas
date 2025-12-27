@@ -5,12 +5,12 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = dirname(__filename);
 
 export async function setupVite(server: Server, app: Express) {
   const vite = await createViteServer({
-    configFile: path.resolve(__dirname, "..", "vite.config.ts"),
+    configFile: path.resolve(process.cwd(), "vite.config.ts"),
     server: {
       middlewareMode: true,
       hmr: {
