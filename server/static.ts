@@ -2,31 +2,49 @@ import type { Express } from "express";
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Função para encontrar o diretório dist/public em vários caminhos possíveis
+function findDistPath(): string | null {
+  const possiblePaths = [
+    // Caminho padrão para desenvolvimento local
+    path.resolve(process.cwd(), "dist", "public"),
+    // Caminho para Vercel serverless (arquivos incluídos via includeFiles)
+    path.resolve("/var/task", "dist", "public"),
+    // Caminho alternativo com api (onde a função serverless é executada)
+    path.resolve("/var/task/api", "..", "dist", "public"),
+  ];
 
-export function serveStatic(app: Express) {
-  // Em produção na Vercel, os arquivos públicos podem estar em diferentes locais
-  // dependendo de onde o código é executado
-  let distPath = path.resolve(__dirname, "..", "dist", "public");
-
-  // Fallback para o diretório de trabalho atual se o caminho relativo não existir
-  if (!fs.existsSync(distPath)) {
-    distPath = path.resolve(process.cwd(), "dist", "public");
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      console.log(`Found dist path: ${p}`);
+      return p;
+    }
   }
 
-  if (!fs.existsSync(distPath)) {
-    console.error(`Pasta de build não encontrada em: ${distPath}`);
-    console.error(`__dirname: ${__dirname}`);
-    console.error(`process.cwd(): ${process.cwd()}`);
+  console.error("Could not find dist/public in any of these paths:");
+  possiblePaths.forEach(p => console.error(`  - ${p}`));
+  console.error(`process.cwd(): ${process.cwd()}`);
+
+  return null;
+}
+
+export function serveStatic(app: Express) {
+  const distPath = findDistPath();
+
+  if (!distPath) {
     // Não lançar erro, apenas retornar uma resposta adequada
     app.get("*", (_req, res) => {
-      res.status(500).json({
-        error: "Build folder not found",
-        paths: { distPath, __dirname, cwd: process.cwd() }
-      });
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+          <head><title>Error</title></head>
+          <body>
+            <h1>Build folder not found</h1>
+            <p>cwd: ${process.cwd()}</p>
+          </body>
+        </html>
+      `);
     });
     return;
   }
@@ -51,7 +69,8 @@ export function serveStatic(app: Express) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.sendFile(indexPath);
     } else {
-      res.status(404).send("index.html não encontrado");
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.status(404).send("<!DOCTYPE html><html><body><h1>index.html not found</h1></body></html>");
     }
   });
 }
