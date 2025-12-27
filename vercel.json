@@ -5,8 +5,9 @@
   "installCommand": "npm install --include=dev",
   "framework": null,
   "functions": {
-    "api/*/.js": {
-      "includeFiles": "dist/**"
+    "api/index.ts": {
+      "includeFiles": "dist/**",
+      "maxDuration": 30
     }
   },
   "rewrites": [
