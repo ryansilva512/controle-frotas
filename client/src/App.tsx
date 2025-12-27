@@ -117,7 +117,29 @@ function Navigation() {
   );
 }
 
-function Router() {
+function UserMenu() {
+  const { user, signOut, isAuthenticated } = useAuth();
+  
+  if (!isAuthenticated) return null;
+  
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground hidden md:block">
+        {user?.username || user?.email}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => signOut()}
+        title="Sair"
+      >
+        <LogOut className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function ProtectedRoutes() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />

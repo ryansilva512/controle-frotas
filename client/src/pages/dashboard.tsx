@@ -21,7 +21,9 @@ export default function Dashboard() {
   const [selectedVehicleIds, setSelectedVehicleIds] = useState<string[]>([]);
   const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-  useVehicleWebSocket();
+  // Usa Supabase Realtime se configurado, senão WebSocket
+  useVehicleUpdates();
+  useAlertsRealtime();
 
   const { data: vehicles = [], isLoading: isLoadingVehicles } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles"],
