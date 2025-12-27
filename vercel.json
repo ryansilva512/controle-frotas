@@ -6,9 +6,22 @@
       "destination": "/api/index"
     }
   ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ],
   "functions": {
     "api/index.ts": {
-      "includeFiles": "dist/public/**"
+      "includeFiles": "dist/public/**",
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
 }
