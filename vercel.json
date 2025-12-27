@@ -1,9 +1,15 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/public",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/api/:path*",
       "destination": "/api/index"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
@@ -19,8 +25,6 @@
   ],
   "functions": {
     "api/index.ts": {
-      "includeFiles": "dist/public/**",
-      "memory": 1024,
       "maxDuration": 30
     }
   }
