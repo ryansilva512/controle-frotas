@@ -10,6 +10,7 @@ export async function setupVite(server: Server, app: Express) {
       middlewareMode: true,
       hmr: {
         server,
+        clientPort: parseInt(process.env.PORT || "5000", 10),
       },
     },
     appType: "spa",
@@ -17,4 +18,3 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 }
-

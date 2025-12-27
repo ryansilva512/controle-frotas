@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import { 
-  Map, History, Shield, Bell, BarChart3, Truck, Home, LogOut, User as UserIcon
+  Map, History, Shield, Bell, BarChart3, Truck, Home
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,23 +21,15 @@ import AlertsPage from "@/pages/alerts";
 import ReportsPage from "@/pages/reports";
 import VehiclesPage from "@/pages/vehicles";
 import NotFound from "@/pages/not-found";
-import AuthPage from "@/pages/auth-page";
-import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { ProtectedRoute } from "@/lib/protected-route";
 
 import type { Alert } from "@shared/schema";
 
 function Navigation() {
   const [location] = useLocation();
-  const { user, logoutMutation } = useAuth();
-  
+
   const { data: alerts = [] } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
-    refetchInterval: 10000,
-    enabled: !!user, // Only fetch if user is logged in
   });
-  
-  if (!user) return null;
 
   const unreadAlerts = alerts.filter(a => !a.read).length;
 
@@ -98,58 +90,22 @@ function Navigation() {
       </nav>
       
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 mr-2 text-sm text-muted-foreground hidden md:flex">
-            <UserIcon className="h-4 w-4" />
-            <span>{user.username}</span>
-        </div>
         <ThemeToggle />
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => logoutMutation.mutate()} 
-          disabled={logoutMutation.isPending}
-          title="Sair"
-        >
-            <LogOut className="h-4 w-4" />
-        </Button>
       </div>
     </header>
-  );
-}
-
-function UserMenu() {
-  const { user, signOut, isAuthenticated } = useAuth();
-  
-  if (!isAuthenticated) return null;
-  
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground hidden md:block">
-        {user?.username || user?.email}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => signOut()}
-        title="Sair"
-      >
-        <LogOut className="h-4 w-4" />
-      </Button>
-    </div>
   );
 }
 
 function ProtectedRoutes() {
   return (
     <Switch>
-      <Route path="/auth" component={AuthPage} />
-      <ProtectedRoute path="/" component={HomePage} />
-      <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <ProtectedRoute path="/vehicles" component={VehiclesPage} />
-      <ProtectedRoute path="/history" component={HistoryPage} />
-      <ProtectedRoute path="/geofences" component={GeofencesPage} />
-      <ProtectedRoute path="/alerts" component={AlertsPage} />
-      <ProtectedRoute path="/reports" component={ReportsPage} />
+      <Route path="/" component={HomePage} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/vehicles" component={VehiclesPage} />
+      <Route path="/history" component={HistoryPage} />
+      <Route path="/geofences" component={GeofencesPage} />
+      <Route path="/alerts" component={AlertsPage} />
+      <Route path="/reports" component={ReportsPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -158,19 +114,17 @@ function ProtectedRoutes() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <ThemeProvider>
-          <TooltipProvider>
-            <div className="flex flex-col h-screen">
-              <Navigation />
-              <main className="flex-1 overflow-hidden">
-                <Router />
-              </main>
-            </div>
-            <Toaster />
-          </TooltipProvider>
-        </ThemeProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <TooltipProvider>
+          <div className="flex flex-col h-screen">
+            <Navigation />
+            <main className="flex-1 overflow-hidden">
+              <ProtectedRoutes />
+            </main>
+          </div>
+          <Toaster />
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

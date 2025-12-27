@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { VehicleList } from "@/components/vehicle-list";
 import { VehicleDetailPanel } from "@/components/vehicle-detail-panel";
 import { FleetMap } from "@/components/fleet-map";
-import { useVehicleWebSocket } from "@/hooks/use-websocket";
+import { useAlertsRealtime, useVehicleUpdates } from "@/hooks/use-websocket";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,6 @@ export default function Dashboard() {
 
   const { data: alerts = [] } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
-    refetchInterval: 10000,
   });
 
   const { data: geofences = [] } = useQuery<Geofence[]>({

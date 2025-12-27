@@ -24,7 +24,6 @@ export default function AlertsPage() {
 
   const { data: alerts = [], isLoading } = useQuery<Alert[]>({
     queryKey: ["/api/alerts"],
-    refetchInterval: 10000,
   });
 
   const markReadMutation = useMutation({
