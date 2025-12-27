@@ -11,8 +11,8 @@ import path from "path";
 import createMemoryStore from "memorystore";
 import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
 const scryptAsync = promisify(scrypt);
 const MemoryStore = createMemoryStore(session);
@@ -49,7 +49,7 @@ async function comparePasswords(supplied: string, stored: string) {
 // Armazenamento em Arquivo Seguro
 async function saveToSecureDocs(userData: any) {
   try {
-    const docsDir = path.resolve(__dirname, "../../docs");
+    const docsDir = path.resolve(process.cwd(), "docs");
     if (!fs.existsSync(docsDir)) {
       fs.mkdirSync(docsDir, { recursive: true });
     }
