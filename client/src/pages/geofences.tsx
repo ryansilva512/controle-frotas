@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { MapContainer, TileLayer, Circle, Polygon, useMapEvents, Marker } from "react-leaflet";
+import { MapContainer, TileLayer, Circle, Polygon, useMapEvents, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { 
   Plus, Trash2, Edit2, MapPin, Shield, Clock, 
@@ -105,6 +105,15 @@ function DrawingMap({ type, center, radius = 500, points = [], onCenterChange, o
   );
 }
 
+function MapClickHandler({ onMapClick }: { onMapClick: () => void }) {
+  useMapEvents({
+    click: () => {
+      onMapClick();
+    },
+  });
+  return null;
+}
+
 export default function GeofencesPage() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -134,6 +143,13 @@ export default function GeofencesPage() {
   const { data: vehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles"],
   });
+
+  // Cleanup selected geofence if it was deleted
+  useEffect(() => {
+    if (selectedGeofence && !geofences.find(g => g.id === selectedGeofence.id)) {
+      setSelectedGeofence(null);
+    }
+  }, [geofences, selectedGeofence]);
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -204,23 +220,7 @@ export default function GeofencesPage() {
       vehicleIds: geofence.vehicleIds || [],
     });
     setEditingGeofence(geofence);
-  };
-
-  const handleUpdate = () => {
-    if (!editingGeofence) return;
-    if (!formData.name) {
-      toast({ title: "Erro", description: "Digite um nome para a geofence.", variant: "destructive" });
-      return;
-    }
-    if (formData.type === "circle" && !formData.center) {
-      toast({ title: "Erro", description: "Clique no mapa para definir o centro da área.", variant: "destructive" });
-      return;
-    }
-    if (formData.type === "polygon" && formData.points.length < 3) {
-      toast({ title: "Erro", description: "Desenhe ao menos 3 pontos para formar um polígono.", variant: "destructive" });
-      return;
-    }
-    updateMutation.mutate({ id: editingGeofence.id, data: formData });
+    setIsCreateOpen(true); // Reusing the create dialog for editing
   };
 
   const resetForm = () => {
@@ -239,6 +239,7 @@ export default function GeofencesPage() {
       ],
       vehicleIds: [],
     });
+    setEditingGeofence(null);
   };
 
   const handleSubmit = () => {
@@ -254,7 +255,12 @@ export default function GeofencesPage() {
       toast({ title: "Erro", description: "Desenhe ao menos 3 pontos para formar um polígono.", variant: "destructive" });
       return;
     }
-    createMutation.mutate(formData);
+    
+    if (editingGeofence) {
+      updateMutation.mutate({ id: editingGeofence.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
   };
 
   const formatDate = (dateString: string | undefined) => {
@@ -273,7 +279,7 @@ export default function GeofencesPage() {
       <div className="w-[400px] flex-shrink-0 border-r border-border bg-sidebar flex flex-col">
         <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
           <h2 className="font-semibold text-lg">Geofences</h2>
-          <Button onClick={() => setIsCreateOpen(true)} className="gap-2" data-testid="button-create-geofence">
+          <Button onClick={() => { resetForm(); setIsCreateOpen(true); }} className="gap-2" data-testid="button-create-geofence">
             <Plus className="h-4 w-4" />
             Criar
           </Button>
@@ -389,6 +395,7 @@ export default function GeofencesPage() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <MapClickHandler onMapClick={() => setSelectedGeofence(null)} />
           
           {geofences.filter(g => g.active).map(geofence => {
             if (geofence.type === "circle" && geofence.center && geofence.radius) {
@@ -404,9 +411,25 @@ export default function GeofencesPage() {
                     weight: selectedGeofence?.id === geofence.id ? 3 : 2,
                   }}
                   eventHandlers={{
-                    click: () => setSelectedGeofence(geofence),
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e.originalEvent);
+                      setSelectedGeofence(geofence);
+                    },
                   }}
-                />
+                >
+                  <Popup>
+                    <div className="p-2 min-w-[200px]">
+                      <h3 className="font-bold text-lg mb-1">{geofence.name}</h3>
+                      {geofence.description && <p className="text-sm text-muted-foreground mb-2">{geofence.description}</p>}
+                      <div className="space-y-1 text-xs">
+                         <p><span className="font-semibold">Status:</span> {geofence.active ? "Ativa" : "Inativa"}</p>
+                         <p><span className="font-semibold">Veículos:</span> {geofence.vehicleIds.length}</p>
+                         <p><span className="font-semibold">Raio:</span> {geofence.radius}m</p>
+                         <p><span className="font-semibold">Último disparo:</span> {formatDate(geofence.lastTriggered)}</p>
+                      </div>
+                    </div>
+                  </Popup>
+                </Circle>
               );
             }
             if (geofence.type === "polygon" && geofence.points && geofence.points.length >= 3) {
@@ -421,9 +444,24 @@ export default function GeofencesPage() {
                     weight: selectedGeofence?.id === geofence.id ? 3 : 2,
                   }}
                   eventHandlers={{
-                    click: () => setSelectedGeofence(geofence),
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e.originalEvent);
+                      setSelectedGeofence(geofence);
+                    },
                   }}
-                />
+                >
+                  <Popup>
+                    <div className="p-2 min-w-[200px]">
+                      <h3 className="font-bold text-lg mb-1">{geofence.name}</h3>
+                      {geofence.description && <p className="text-sm text-muted-foreground mb-2">{geofence.description}</p>}
+                      <div className="space-y-1 text-xs">
+                         <p><span className="font-semibold">Status:</span> {geofence.active ? "Ativa" : "Inativa"}</p>
+                         <p><span className="font-semibold">Veículos:</span> {geofence.vehicleIds.length}</p>
+                         <p><span className="font-semibold">Último disparo:</span> {formatDate(geofence.lastTriggered)}</p>
+                      </div>
+                    </div>
+                  </Popup>
+                </Polygon>
               );
             }
             return null;
@@ -452,7 +490,7 @@ export default function GeofencesPage() {
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Criar Nova Geofence</DialogTitle>
+            <DialogTitle>{editingGeofence ? "Editar Geofence" : "Criar Nova Geofence"}</DialogTitle>
           </DialogHeader>
           
           <div className="flex-1 flex gap-4 min-h-0">
@@ -497,17 +535,66 @@ export default function GeofencesPage() {
               </div>
               
               {formData.type === "circle" && (
-                <div className="space-y-2">
-                  <Label htmlFor="radius">Raio (metros)</Label>
-                  <Input
-                    id="radius"
-                    type="number"
-                    value={formData.radius}
-                    onChange={(e) => setFormData({ ...formData, radius: parseInt(e.target.value) || 500 })}
-                    min={50}
-                    max={10000}
-                    data-testid="input-radius"
-                  />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="latitude">Latitude</Label>
+                      <Input
+                        id="latitude"
+                        type="number"
+                        step="any"
+                        value={formData.center?.latitude ?? ""}
+                        onChange={(e) => {
+                          const lat = parseFloat(e.target.value);
+                          if (!isNaN(lat)) {
+                            setFormData({
+                              ...formData,
+                              center: {
+                                latitude: lat,
+                                longitude: formData.center?.longitude ?? -60.0217 // Default longitude if not set
+                              }
+                            });
+                          }
+                        }}
+                        placeholder="-3.1190"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="longitude">Longitude</Label>
+                      <Input
+                        id="longitude"
+                        type="number"
+                        step="any"
+                        value={formData.center?.longitude ?? ""}
+                        onChange={(e) => {
+                          const lng = parseFloat(e.target.value);
+                          if (!isNaN(lng)) {
+                            setFormData({
+                              ...formData,
+                              center: {
+                                latitude: formData.center?.latitude ?? -3.1190, // Default latitude if not set
+                                longitude: lng
+                              }
+                            });
+                          }
+                        }}
+                        placeholder="-60.0217"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="radius">Raio (metros)</Label>
+                    <Input
+                      id="radius"
+                      type="number"
+                      value={formData.radius}
+                      onChange={(e) => setFormData({ ...formData, radius: parseInt(e.target.value) || 500 })}
+                      min={50}
+                      max={10000}
+                      data-testid="input-radius"
+                    />
+                  </div>
                 </div>
               )}
               
@@ -614,198 +701,9 @@ export default function GeofencesPage() {
           </div>
           
           <DialogFooter>
-            <p className="text-xs text-muted-foreground mr-auto">
-              {formData.type === "circle" 
-                ? "Clique no mapa para definir o centro da área circular"
-                : "Clique no mapa para adicionar pontos do polígono"}
-            </p>
-            <Button variant="outline" onClick={() => { setIsCreateOpen(false); resetForm(); }}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending} data-testid="button-save-geofence">
-              {createMutation.isPending ? "Salvando..." : "Salvar Geofence"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Edição */}
-      <Dialog open={!!editingGeofence} onOpenChange={(open) => { if (!open) { setEditingGeofence(null); resetForm(); } }}>
-        <DialogContent className="max-w-4xl h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Editar Geofence</DialogTitle>
-          </DialogHeader>
-          
-          <div className="flex-1 flex gap-4 min-h-0">
-            <div className="w-[300px] flex-shrink-0 space-y-4 overflow-y-auto pr-2">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Nome</Label>
-                <Input
-                  id="edit-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ex: Depósito Central"
-                  data-testid="input-edit-geofence-name"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-description">Descrição</Label>
-                <Textarea
-                  id="edit-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Descrição opcional"
-                  rows={2}
-                  data-testid="input-edit-geofence-description"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Tipo de Área</Label>
-                <Tabs value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v as "circle" | "polygon", center: undefined, points: [] })}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="circle" className="gap-2">
-                      <CircleIcon className="h-4 w-4" />
-                      Círculo
-                    </TabsTrigger>
-                    <TabsTrigger value="polygon" className="gap-2">
-                      <Pentagon className="h-4 w-4" />
-                      Polígono
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-              
-              {formData.type === "circle" && (
-                <div className="space-y-2">
-                  <Label htmlFor="edit-radius">Raio (metros)</Label>
-                  <Input
-                    id="edit-radius"
-                    type="number"
-                    value={formData.radius}
-                    onChange={(e) => setFormData({ ...formData, radius: parseInt(e.target.value) || 500 })}
-                    min={50}
-                    max={10000}
-                    data-testid="input-edit-radius"
-                  />
-                </div>
-              )}
-              
-              <div className="space-y-3">
-                <Label>Regras de Alerta</Label>
-                
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-green-500" />
-                    <span className="text-sm">Alertar entrada</span>
-                  </div>
-                  <Switch
-                    checked={formData.rules.find(r => r.type === "entry")?.enabled || false}
-                    onCheckedChange={(checked) => {
-                      setFormData({
-                        ...formData,
-                        rules: formData.rules.map(r => r.type === "entry" ? { ...r, enabled: checked } : r),
-                      });
-                    }}
-                    data-testid="switch-edit-entry"
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
-                    <span className="text-sm">Alertar saída</span>
-                  </div>
-                  <Switch
-                    checked={formData.rules.find(r => r.type === "exit")?.enabled || false}
-                    onCheckedChange={(checked) => {
-                      setFormData({
-                        ...formData,
-                        rules: formData.rules.map(r => r.type === "exit" ? { ...r, enabled: checked } : r),
-                      });
-                    }}
-                    data-testid="switch-edit-exit"
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-amber-500" />
-                    <span className="text-sm">Permanência prolongada</span>
-                  </div>
-                  <Switch
-                    checked={formData.rules.find(r => r.type === "dwell")?.enabled || false}
-                    onCheckedChange={(checked) => {
-                      setFormData({
-                        ...formData,
-                        rules: formData.rules.map(r => r.type === "dwell" ? { ...r, enabled: checked } : r),
-                      });
-                    }}
-                    data-testid="switch-edit-dwell"
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-tolerance">Tolerância (segundos)</Label>
-                <Input
-                  id="edit-tolerance"
-                  type="number"
-                  value={formData.rules[0]?.toleranceSeconds || 30}
-                  onChange={(e) => {
-                    const tolerance = parseInt(e.target.value) || 30;
-                    setFormData({
-                      ...formData,
-                      rules: formData.rules.map(r => ({ ...r, toleranceSeconds: tolerance })),
-                    });
-                  }}
-                  min={0}
-                  max={300}
-                  data-testid="input-edit-tolerance"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Ignora entradas/saídas que durarem menos que este tempo
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex-1 rounded-lg overflow-hidden border">
-              <MapContainer
-                key={editingGeofence?.id}
-                center={formData.center ? [formData.center.latitude, formData.center.longitude] : [-3.1190, -60.0217]}
-                zoom={13}
-                className="h-full w-full"
-                zoomControl={true}
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <DrawingMap
-                  type={formData.type}
-                  center={formData.center}
-                  radius={formData.radius}
-                  points={formData.points}
-                  onCenterChange={(center) => setFormData({ ...formData, center })}
-                  onRadiusChange={(radius) => setFormData({ ...formData, radius })}
-                  onPointsChange={(points) => setFormData({ ...formData, points })}
-                />
-              </MapContainer>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <p className="text-xs text-muted-foreground mr-auto">
-              {formData.type === "circle" 
-                ? "Clique no mapa para redefinir o centro da área circular"
-                : "Clique no mapa para adicionar pontos do polígono"}
-            </p>
-            <Button variant="outline" onClick={() => { setEditingGeofence(null); resetForm(); }}>
-              Cancelar
-            </Button>
-            <Button onClick={handleUpdate} disabled={updateMutation.isPending} data-testid="button-update-geofence">
-              {updateMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? "Salvando..." : (editingGeofence ? "Salvar Alterações" : "Criar Geofence")}
             </Button>
           </DialogFooter>
         </DialogContent>

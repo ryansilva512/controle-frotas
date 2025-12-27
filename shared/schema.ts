@@ -33,6 +33,9 @@ export const vehicles = pgTable("vehicles", {
   longitude: real("longitude").notNull(),
   accuracy: real("accuracy").notNull().default(10),
   batteryLevel: integer("battery_level"),
+  accessCode: text("access_code"),
+  accessPin: text("access_pin"),
+  lastLogin: timestamp("last_login"),
   lastUpdate: timestamp("last_update").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -136,7 +139,10 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  name: text("name").notNull().default("User"),
+  role: text("role").notNull().default("user"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastAccess: timestamp("last_access"),
 });
 
 // ============================================
@@ -312,9 +318,12 @@ export type VehicleStats = z.infer<typeof vehicleStatsSchema>;
 
 // User Schema
 export const insertUserSchema = z.object({
-  username: z.string(),
-  password: z.string(),
+  username: z.string().email("Login deve ser um e-mail válido"),
+  password: z.string()
+    .min(8, "A senha deve ter no mínimo 8 caracteres")
+    .regex(/[A-Z]/, "Deve conter pelo menos uma letra maiúscula")
+    .regex(/[0-9]/, "Deve conter pelo menos um número"),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = { id: string; username: string; password: string };
+export type User = typeof users.$inferSelect;

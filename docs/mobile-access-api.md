@@ -266,3 +266,4 @@ As credenciais podem ser gerenciadas na interface web:
 5. Altere o PIN ou regenere o código conforme necessário
 
 
+
