@@ -64,20 +64,17 @@ async function buildAll() {
 
   console.log("building vercel api function...");
   await esbuild({
-    entryPoints: ["api/index.ts"],
+    entryPoints: ["server/api-handler.ts"],
     platform: "node",
     bundle: true,
-    format: "esm",
-    outfile: "api/index.js",
+    format: "cjs",
+    outfile: "dist/api.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
     external: ["@vercel/node"],
     logLevel: "info",
-    banner: {
-      js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
-    },
   });
 }
 
