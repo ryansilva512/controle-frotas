@@ -730,78 +730,84 @@ export async function registerRoutes(server: Server, app: Express) {
   // WebSocket para atualizações em tempo real
   // ============================================
   
-  const wss = new WebSocketServer({ server, path: "/ws" });
-  
-  // Armazenar clientes conectados
-  const clients = new Set<WebSocket>();
-  
-  wss.on("connection", async (ws) => {
-    console.log("Cliente WebSocket conectado");
-    clients.add(ws);
-
-    // Enviar dados iniciais
-    try {
-      const { data } = await supabase
-        .from("vehicles")
-        .select("*")
-        .order("name");
-      
-      if (data) {
-        const vehicles = data.map(transformVehicle);
-        ws.send(JSON.stringify({ type: "vehicles", data: vehicles }));
-      }
-    } catch (error) {
-      console.error("Erro ao enviar dados iniciais:", error);
-    }
-
-    ws.on("close", () => {
-      clients.delete(ws);
-      console.log("Cliente WebSocket desconectado");
-    });
-
-    ws.on("error", (error) => {
-      console.error("Erro no WebSocket:", error);
-      clients.delete(ws);
-    });
-  });
-
-  // Função para broadcast de atualizações para todos os clientes
-  async function broadcastVehicleUpdates() {
-    if (clients.size === 0) return;
+  // Só inicializa WebSocket se tivermos um servidor HTTP válido
+  // Na Vercel (serverless), server será null
+  if (server) {
+    const wss = new WebSocketServer({ server, path: "/ws" });
     
-    try {
-      const { data } = await supabase
-        .from("vehicles")
-        .select("*")
-        .order("name");
-      
-      if (data) {
-        const vehicles = data.map(transformVehicle);
-        const message = JSON.stringify({ type: "vehicles", data: vehicles });
+    // Armazenar clientes conectados
+    const clients = new Set<WebSocket>();
+    
+    wss.on("connection", async (ws) => {
+      console.log("Cliente WebSocket conectado");
+      clients.add(ws);
+
+      // Enviar dados iniciais
+      try {
+        const { data } = await supabase
+          .from("vehicles")
+          .select("*")
+          .order("name");
         
-        clients.forEach((client) => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-          }
-        });
+        if (data) {
+          const vehicles = data.map(transformVehicle);
+          ws.send(JSON.stringify({ type: "vehicles", data: vehicles }));
+        }
+      } catch (error) {
+        console.error("Erro ao enviar dados iniciais:", error);
       }
-    } catch (error) {
-      console.error("Erro ao buscar veículos para broadcast:", error);
+
+      ws.on("close", () => {
+        clients.delete(ws);
+        console.log("Cliente WebSocket desconectado");
+      });
+
+      ws.on("error", (error) => {
+        console.error("Erro no WebSocket:", error);
+        clients.delete(ws);
+      });
+    });
+
+    // Função para broadcast de atualizações para todos os clientes
+    async function broadcastVehicleUpdates() {
+      if (clients.size === 0) return;
+      
+      try {
+        const { data } = await supabase
+          .from("vehicles")
+          .select("*")
+          .order("name");
+        
+        if (data) {
+          const vehicles = data.map(transformVehicle);
+          const message = JSON.stringify({ type: "vehicles", data: vehicles });
+          
+          clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(message);
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Erro ao buscar veículos para broadcast:", error);
+      }
     }
+
+    // Configurar Supabase Realtime para atualizações automáticas
+    const channel = supabase
+      .channel("vehicles-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "vehicles" },
+        () => {
+          broadcastVehicleUpdates();
+        }
+      )
+      .subscribe();
+
+    // Fallback: Atualizar a cada 5 segundos se Realtime não estiver funcionando
+    setInterval(broadcastVehicleUpdates, 5000);
+  } else {
+    console.log("Ambiente serverless detectado - WebSocket desabilitado");
   }
-
-  // Configurar Supabase Realtime para atualizações automáticas
-  const channel = supabase
-    .channel("vehicles-changes")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "vehicles" },
-      () => {
-        broadcastVehicleUpdates();
-      }
-    )
-    .subscribe();
-
-  // Fallback: Atualizar a cada 5 segundos se Realtime não estiver funcionando
-  setInterval(broadcastVehicleUpdates, 5000);
 }
