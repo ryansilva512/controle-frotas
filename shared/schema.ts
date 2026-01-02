@@ -25,7 +25,6 @@ export const vehicles = pgTable("vehicles", {
   model: text("model"),
   status: text("status").$type<VehicleStatus>().notNull().default("offline"),
   ignition: text("ignition").$type<IgnitionStatus>().notNull().default("off"),
-  isConnected: boolean("is_connected").notNull().default(false),
   currentSpeed: real("current_speed").notNull().default(0),
   speedLimit: real("speed_limit").notNull().default(60),
   heading: real("heading").notNull().default(0),
@@ -33,9 +32,6 @@ export const vehicles = pgTable("vehicles", {
   longitude: real("longitude").notNull(),
   accuracy: real("accuracy").notNull().default(10),
   batteryLevel: integer("battery_level"),
-  accessCode: text("access_code"),
-  accessPin: text("access_pin"),
-  lastLogin: timestamp("last_login"),
   lastUpdate: timestamp("last_update").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -139,10 +135,7 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
-  name: text("name").notNull().default("User"),
-  role: text("role").notNull().default("user"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  lastAccess: timestamp("last_access"),
 });
 
 // ============================================
@@ -157,7 +150,6 @@ export const vehicleSchema = z.object({
   model: z.string().optional().nullable(),
   status: z.enum(["moving", "stopped", "idle", "offline"]),
   ignition: z.enum(["on", "off"]),
-  isConnected: z.boolean(),
   currentSpeed: z.number(),
   speedLimit: z.number(),
   heading: z.number(),
@@ -318,12 +310,9 @@ export type VehicleStats = z.infer<typeof vehicleStatsSchema>;
 
 // User Schema
 export const insertUserSchema = z.object({
-  username: z.string().email("Login deve ser um e-mail válido"),
-  password: z.string()
-    .min(8, "A senha deve ter no mínimo 8 caracteres")
-    .regex(/[A-Z]/, "Deve conter pelo menos uma letra maiúscula")
-    .regex(/[0-9]/, "Deve conter pelo menos um número"),
+  username: z.string(),
+  password: z.string(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type User = { id: string; username: string; password: string };
