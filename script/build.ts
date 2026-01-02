@@ -7,10 +7,12 @@ import { rm, readFile } from "fs/promises";
 const allowlist = [
   "@google/generative-ai",
   "@neondatabase/serverless",
+  "@supabase/supabase-js",
   "axios",
   "connect-pg-simple",
   "cors",
   "date-fns",
+  "dotenv",
   "drizzle-orm",
   "drizzle-zod",
   "express",
@@ -58,6 +60,24 @@ async function buildAll() {
     minify: true,
     external: externals,
     logLevel: "info",
+  });
+
+  console.log("building vercel api function...");
+  await esbuild({
+    entryPoints: ["api/index.ts"],
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outfile: "api/index.js",
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
+    minify: true,
+    external: ["@vercel/node"],
+    logLevel: "info",
+    banner: {
+      js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url);`,
+    },
   });
 }
 
